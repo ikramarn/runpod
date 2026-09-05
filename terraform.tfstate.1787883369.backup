@@ -1,0 +1,163 @@
+{
+  "version": 4,
+  "terraform_version": "1.15.8",
+  "serial": 43,
+  "lineage": "05cfccb5-4f7f-4dbb-6bb7-3b8b27d663fa",
+  "outputs": {
+    "pod_id": {
+      "value": "epfhgz3o0s2f8t",
+      "type": "string"
+    },
+    "pod_public_ip": {
+      "value": "",
+      "type": "string"
+    }
+  },
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "runpod_network_volume",
+      "name": "ai_storage",
+      "provider": "provider[\"registry.terraform.io/decentralized-infrastructure/runpod\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "data_center_id": "EU-RO-1",
+            "id": "zx4irnhu8x",
+            "name": "automation-storage",
+            "size": 50
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "runpod_pod",
+      "name": "ai_worker",
+      "provider": "provider[\"registry.terraform.io/decentralized-infrastructure/runpod\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "actual_data_center": "",
+            "adjusted_cost_per_hr": 0,
+            "allowed_cuda_versions": null,
+            "cloud_type": "SECURE",
+            "compute_type": "GPU",
+            "container_disk_in_gb": 50,
+            "container_registry_auth_id": null,
+            "cost_per_hr": 0.72,
+            "country_codes": null,
+            "cpu_flavor_ids": null,
+            "cpu_flavor_priority": "availability",
+            "data_center_ids": [
+              "EU-RO-1"
+            ],
+            "data_center_priority": "custom",
+            "desired_status": "RUNNING",
+            "docker_entrypoint": null,
+            "docker_start_cmd": [
+              "/bin/bash",
+              "-c",
+              "#!/usr/bin/env bash\nset -euo pipefail\n\nexport HOME=/workspace/paperclip-home\nexport PATH=\"$HOME/.local/bin:$PATH\"\nexport OLLAMA_MODELS=/workspace/ollama_models\nPROJECT=/workspace/youtube-automation\n\nmkdir -p \"$HOME\" \"$OLLAMA_MODELS\" \"$PROJECT\" /workspace/logs\n\nif ! command -v ffmpeg \u003e/dev/null 2\u003e\u00261; then\n  apt-get update\n  DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg python3-venv curl\nfi\n\nif ! command -v ollama \u003e/dev/null 2\u003e\u00261; then\n  curl -fsSL \"https://ollama.com/install.sh?cachebust=$(date +%s)\" | sh\nfi\n\nif ! command -v paperclipai \u003e/dev/null 2\u003e\u00261; then\n  npx --yes paperclipai@latest install\nfi\n\nif [ ! -d \"$PROJECT/.venv\" ]; then\n  python3 -m venv \"$PROJECT/.venv\"\nfi\n\"$PROJECT/.venv/bin/pip\" install --upgrade pip\nif [ -f \"$PROJECT/requirements.txt\" ]; then\n  \"$PROJECT/.venv/bin/pip\" install -r \"$PROJECT/requirements.txt\"\nfi\n\"$PROJECT/.venv/bin/pip\" install piper-tts\n\n# Download the voice model once into the persistent project directory.\nif [ ! -f \"$PROJECT/en_US-lessac-medium.onnx\" ]; then\n  (cd \"$PROJECT\" \u0026\u0026 \"$PROJECT/.venv/bin/python\" -m piper.download en_US-lessac-medium)\nfi\n\nexport PATH=\"$HOME/.local/bin:$PATH\"\npaperclipai onboard --yes --bind lan\n\nollama serve \u003e /workspace/logs/ollama.log 2\u003e\u00261 \u0026\nollama_pid=$!\npaperclipai run \u003e /workspace/logs/paperclip.log 2\u003e\u00261 \u0026\npaperclip_pid=$!\ntrap 'kill \"$ollama_pid\" \"$paperclip_pid\" 2\u003e/dev/null || true' EXIT\n\nuntil curl -fsS http://127.0.0.1:11434/api/tags \u003e/dev/null 2\u003e\u00261; do sleep 2; done\nollama pull qwen2.5-coder:14b\nwait \"$ollama_pid\" \"$paperclip_pid\"\n"
+            ],
+            "env": {
+              "HOME": "/workspace/paperclip-home",
+              "OLLAMA_HOST": "0.0.0.0",
+              "OLLAMA_MODELS": "/workspace/ollama_models",
+              "PAPERCLIP_TELEMETRY_DISABLED": "1"
+            },
+            "global_networking": false,
+            "gpu_count": 1,
+            "gpu_type_ids": [
+              "NVIDIA RTX PRO 4500 Blackwell"
+            ],
+            "gpu_type_priority": "availability",
+            "id": "epfhgz3o0s2f8t",
+            "image_name": "runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2204-cluster",
+            "interruptible": false,
+            "last_started_at": "2026-08-28 02:08:02.409 +0000 UTC",
+            "locked": false,
+            "machine_id": "d9oslwk6vszw",
+            "memory_in_gb": 62,
+            "min_disk_bandwidth_mbps": null,
+            "min_download_mbps": null,
+            "min_ram_per_gpu": 8,
+            "min_upload_mbps": null,
+            "min_vcpu_per_gpu": 2,
+            "name": "paperclip-gpu-worker",
+            "network_volume_id": "zx4irnhu8x",
+            "ports": [
+              "11434/http",
+              "3100/http"
+            ],
+            "public_ip": "",
+            "support_public_ip": true,
+            "template_id": null,
+            "vcpu_count": 2,
+            "volume_in_gb": 20,
+            "volume_mount_path": "/workspace"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "dependencies": [
+            "runpod_network_volume.ai_storage",
+            "terraform_data.bootstrap_revision"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "bootstrap_revision",
+      "provider": "provider[\"terraform.io/builtin/terraform\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "25d8ae4a-a25d-871c-4eb9-f4fbf28234e6",
+            "input": {
+              "value": "e5829e2faf80b74aedaaa3edcedc2f800ad7c71b229c1845eba114ca3d258bb3",
+              "type": "string"
+            },
+            "output": {
+              "value": "e5829e2faf80b74aedaaa3edcedc2f800ad7c71b229c1845eba114ca3d258bb3",
+              "type": "string"
+            },
+            "triggers_replace": null
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    }
+  ],
+  "check_results": [
+    {
+      "object_kind": "var",
+      "config_addr": "var.runpod_data_center",
+      "status": "pass",
+      "objects": [
+        {
+          "object_addr": "var.runpod_data_center",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "object_kind": "var",
+      "config_addr": "var.runpod_cloud_type",
+      "status": "pass",
+      "objects": [
+        {
+          "object_addr": "var.runpod_cloud_type",
+          "status": "pass"
+        }
+      ]
+    }
+  ]
+}

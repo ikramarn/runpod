@@ -1,0 +1,41 @@
+{
+  "version": 4,
+  "terraform_version": "1.15.8",
+  "serial": 16,
+  "lineage": "05cfccb5-4f7f-4dbb-6bb7-3b8b27d663fa",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "runpod_network_volume",
+      "name": "ai_storage",
+      "provider": "provider[\"registry.terraform.io/decentralized-infrastructure/runpod\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "data_center_id": "US-TX-3",
+            "id": "mrov5et144",
+            "name": "automation-storage",
+            "size": 50
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    }
+  ],
+  "check_results": [
+    {
+      "object_kind": "var",
+      "config_addr": "var.runpod_data_center",
+      "status": "pass",
+      "objects": [
+        {
+          "object_addr": "var.runpod_data_center",
+          "status": "pass"
+        }
+      ]
+    }
+  ]
+}

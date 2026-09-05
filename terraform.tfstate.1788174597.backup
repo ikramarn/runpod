@@ -1,0 +1,121 @@
+{
+  "version": 4,
+  "terraform_version": "1.15.8",
+  "serial": 70,
+  "lineage": "05cfccb5-4f7f-4dbb-6bb7-3b8b27d663fa",
+  "outputs": {
+    "pod_id": {
+      "value": "xlowo35f8tlzbz",
+      "type": "string"
+    },
+    "pod_public_ip": {
+      "value": "",
+      "type": "string"
+    }
+  },
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "runpod_pod",
+      "name": "ai_worker",
+      "provider": "provider[\"registry.terraform.io/decentralized-infrastructure/runpod\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "actual_data_center": "",
+            "adjusted_cost_per_hr": 0,
+            "allowed_cuda_versions": null,
+            "cloud_type": "SECURE",
+            "compute_type": "GPU",
+            "container_disk_in_gb": 50,
+            "container_registry_auth_id": null,
+            "cost_per_hr": 2.09,
+            "country_codes": null,
+            "cpu_flavor_ids": null,
+            "cpu_flavor_priority": "availability",
+            "data_center_ids": [
+              "EUR-IS-2"
+            ],
+            "data_center_priority": "custom",
+            "desired_status": "RUNNING",
+            "docker_entrypoint": null,
+            "docker_start_cmd": [
+              "/bin/bash",
+              "-c",
+              "#!/usr/bin/env bash\nset -euo pipefail\n\nexport HOME=/workspace/paperclip-home\nexport PATH=\"$HOME/.local/bin:$PATH\"\nexport OLLAMA_MODELS=/workspace/ollama_models\nPROJECT=/workspace/youtube-automation\n\nmkdir -p \"$HOME\" \"$OLLAMA_MODELS\" \"$PROJECT\" /workspace/logs\nexec \u003e \u003e(tee -a /workspace/logs/bootstrap.log) 2\u003e\u00261\ntrap 'status=$?; printf \"bootstrap failed with status %s at line %s: %s\\n\" \"$status\" \"$LINENO\" \"$BASH_COMMAND\" \u003e\u00262' ERR\n\nprintf 'bootstrap started at %s\\n' \"$(date -Is)\"\n\nif ! command -v ffmpeg \u003e/dev/null 2\u003e\u00261; then\n  apt-get update\n  DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg python3-venv curl\nfi\n\nif ! command -v ollama \u003e/dev/null 2\u003e\u00261; then\n  printf 'installing Ollama\\n'\n  curl -fsSL \"https://ollama.com/install.sh?cachebust=$(date +%s)\" | sh\nfi\n\nif ! command -v paperclipai \u003e/dev/null 2\u003e\u00261; then\n  printf 'installing Paperclip\\n'\n  if ! command -v node \u003e/dev/null 2\u003e\u00261 || ! command -v npx \u003e/dev/null 2\u003e\u00261; then\n    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -\n    DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs\n  fi\n  npx --yes paperclipai@latest install\nfi\n\nif [ ! -d \"$PROJECT/.venv\" ]; then\n  python3 -m venv \"$PROJECT/.venv\"\nfi\n\"$PROJECT/.venv/bin/pip\" install --upgrade pip\nif [ -f \"$PROJECT/requirements.txt\" ]; then\n  \"$PROJECT/.venv/bin/pip\" install -r \"$PROJECT/requirements.txt\"\nfi\n\"$PROJECT/.venv/bin/pip\" install piper-tts\n\n# Download the voice model once into the persistent project directory.\nif [ ! -f \"$PROJECT/en_US-lessac-medium.onnx\" ] || [ ! -f \"$PROJECT/en_US-lessac-medium.onnx.json\" ]; then\n  printf 'downloading Piper voice model\\n'\n  (cd \"$PROJECT\" \u0026\u0026 \"$PROJECT/.venv/bin/python\" -m piper.download_voices --data-dir \"$PROJECT\" en_US-lessac-medium)\nfi\n\nexport PATH=\"$HOME/.local/bin:$PATH\"\nprintf 'onboarding Paperclip\\n'\npaperclipai onboard --yes --bind lan\n\nprintf 'starting Ollama and Paperclip\\n'\nollama serve \u003e /workspace/logs/ollama.log 2\u003e\u00261 \u0026\nollama_pid=$!\npaperclipai run \u003e /workspace/logs/paperclip.log 2\u003e\u00261 \u0026\npaperclip_pid=$!\ntrap 'kill \"$ollama_pid\" \"$paperclip_pid\" 2\u003e/dev/null || true' EXIT\n\nuntil curl -fsS http://127.0.0.1:11434/api/tags \u003e/dev/null 2\u003e\u00261; do sleep 2; done\nprintf 'pulling Ollama model\\n'\nollama pull qwen2.5-coder:14b\nprintf 'bootstrap completed at %s\\n' \"$(date -Is)\"\nwait \"$ollama_pid\" \"$paperclip_pid\"\n"
+            ],
+            "env": {
+              "HOME": "/workspace/paperclip-home",
+              "OLLAMA_HOST": "0.0.0.0",
+              "OLLAMA_MODELS": "/workspace/ollama_models",
+              "PAPERCLIP_TELEMETRY_DISABLED": "1"
+            },
+            "global_networking": false,
+            "gpu_count": 1,
+            "gpu_type_ids": [
+              "NVIDIA RTX PRO 6000 Blackwell Server Edition"
+            ],
+            "gpu_type_priority": "availability",
+            "id": "xlowo35f8tlzbz",
+            "image_name": "runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2204-cluster",
+            "interruptible": false,
+            "last_started_at": "2026-08-31 10:55:56.062 +0000 UTC",
+            "locked": false,
+            "machine_id": "0jkyy3nqg5y7",
+            "memory_in_gb": 188,
+            "min_disk_bandwidth_mbps": null,
+            "min_download_mbps": null,
+            "min_ram_per_gpu": 8,
+            "min_upload_mbps": null,
+            "min_vcpu_per_gpu": 2,
+            "name": "paperclip-gpu-worker",
+            "network_volume_id": null,
+            "ports": [
+              "11434/http",
+              "3100/http"
+            ],
+            "public_ip": "",
+            "support_public_ip": true,
+            "template_id": null,
+            "vcpu_count": 2,
+            "volume_in_gb": 50,
+            "volume_mount_path": "/workspace"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "dependencies": [
+            "runpod_network_volume.ai_storage",
+            "terraform_data.bootstrap_revision"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "bootstrap_revision",
+      "provider": "provider[\"terraform.io/builtin/terraform\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "25d8ae4a-a25d-871c-4eb9-f4fbf28234e6",
+            "input": {
+              "value": "5463a82f7f2d55a7b7b3c7e2ea1631d1525310569f4b27589d344b810da4731a",
+              "type": "string"
+            },
+            "output": {
+              "value": "5463a82f7f2d55a7b7b3c7e2ea1631d1525310569f4b27589d344b810da4731a",
+              "type": "string"
+            },
+            "triggers_replace": null
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}
