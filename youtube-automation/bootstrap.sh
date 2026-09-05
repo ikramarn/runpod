@@ -50,14 +50,16 @@ fi
 
 # ── Node.js 24 + Paperclip ───────────────────────────────────────────────────
 # Paperclip requires Node.js >= 24.11.0
+# Always ensure Node 24 is present before any npm commands
+NODE_MAJOR=$(node --version 2>/dev/null | sed 's/v\([0-9]*\).*/\1/' || true)
+if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 24 ]; then
+  printf 'installing Node.js 24\n'
+  curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+  DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+fi
+
 if ! command -v paperclipai >/dev/null 2>&1; then
   printf 'installing Paperclip\n'
-  NODE_MAJOR=$(node --version 2>/dev/null | sed 's/v\([0-9]*\).*/\1/' || true)
-  if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 24 ]; then
-    printf 'installing Node.js 24\n'
-    curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-    DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
-  fi
   npx --yes paperclipai@latest install
 fi
 
