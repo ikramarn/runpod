@@ -63,7 +63,7 @@ def _ensure_weights() -> None:
 def generate_clip(
     prompt: str,
     output_path: Path,
-    num_frames: int = 17,          # 4k+1 minimum; 17 frames ≈ 0.7s, lowest VRAM
+    num_frames: int = 9,           # 4k+1 minimum practical; 9 frames ≈ 0.4s, smallest VAE output
     num_inference_steps: int = 20,
     guidance_scale: float = 5.0,
     seed: int | None = None,
@@ -94,9 +94,7 @@ def generate_clip(
             "--frame_num",          str(num_frames),
             "--save_file",          str(tmp_mp4),
             "--offload_model",      "true",
-            # Note: --t5_cpu removed — loading 11GB T5 to CPU hangs on slow
-            # network volumes. Load to GPU instead; offload_model handles
-            # moving it off GPU between steps.
+            "--convert_model_dtype",  # fp16 saves ~1.5 GB during VAE decode
             "--prompt",             prompt,
         ]
         if seed is not None:
@@ -126,7 +124,7 @@ def generate_clip(
 def generate_clips(
     prompts: list[str],
     output_dir: Path,
-    num_frames: int = 17,
+    num_frames: int = 9,
     seed: int | None = None,
 ) -> list[Path]:
     """Generate one clip per prompt, named clip_1.mp4 … clip_N.mp4."""
