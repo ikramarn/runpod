@@ -97,13 +97,21 @@ if [ -f "$PROJECT/requirements.txt" ]; then
   if [ ! -f "$WAN_REPO/generate.py" ]; then
     printf 'cloning Wan2.2 repo\n'
     git clone https://github.com/Wan-Video/Wan2.2.git "$WAN_REPO"
-    "$PROJECT/.venv/bin/pip" install -q -r "$WAN_REPO/requirements.txt"
+    # DO NOT install Wan2.2's requirements.txt — it pins numpy<2 which
+    # conflicts with librosa/scipy (>=2). Install only the extras we need.
+    "$PROJECT/.venv/bin/pip" install -q \
+      decord librosa peft easydict ftfy dashscope opencv-python torchaudio \
+      hf_transfer
+    # flash_attn: download pre-built wheel to avoid cross-device link error
+    # and the need to compile from source.
+    "$PROJECT/.venv/bin/pip" install -q --cache-dir /workspace/.pip-cache \
+      "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3.post1/flash_attn-2.8.3.post1+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
   fi
 
   if [ ! -d "$WAN_WEIGHTS" ] || [ -z "$(ls -A "$WAN_WEIGHTS" 2>/dev/null)" ]; then
     printf 'downloading Wan2.2 TI2V-5B weights to %s (~15 GB)\n' "$WAN_WEIGHTS"
     mkdir -p "$WAN_WEIGHTS"
-    "$PROJECT/.venv/bin/huggingface-cli" download \
+    HF_HUB_ENABLE_HF_TRANSFER=1 "$PROJECT/.venv/bin/huggingface-cli" download \
       "$WAN_MODEL_ID" \
       --local-dir "$WAN_WEIGHTS"
   else
