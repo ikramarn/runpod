@@ -90,7 +90,7 @@ def generate_clip(
     prompt: str,
     output_path: Path,
     num_frames: int = 49,           # must be 4k+1; 49 ≈ 2 s @ 24 fps, fits in 24 GB VRAM
-    num_inference_steps: int = 50,
+    num_inference_steps: int = 20,  # 20 steps sufficient for good quality, lower peak VRAM
     guidance_scale: float = 5.0,
     seed: int | None = None,
 ) -> Path:
@@ -119,8 +119,9 @@ def generate_clip(
             "--sample_guide_scale", str(guidance_scale),
             "--frame_num",          str(num_frames),
             "--save_file",          str(tmp_mp4),
-            "--offload_model",      "true",   # keep peak VRAM ≤ 22 GB on 24 GB card
-            "--t5_cpu",                       # offload T5 encoder to CPU
+            "--offload_model",      "true",   # offload layers to CPU between steps
+            "--t5_cpu",                       # keep T5 encoder on CPU entirely
+            "--convert_model_dtype",          # fp16 instead of bf16, saves ~1.5 GB VRAM
             "--prompt",             prompt,
         ]
         if seed is not None:
