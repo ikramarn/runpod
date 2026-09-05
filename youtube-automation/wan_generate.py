@@ -28,7 +28,7 @@ WAN_REPO_DIR  = Path(os.environ.get("WAN_REPO_DIR",  "/workspace/Wan2.2"))
 WAN_MODEL_DIR = Path(os.environ.get("WAN_MODEL_DIR", "/workspace/wan-weights/Wan2.2-TI2V-5B"))
 WAN_MODEL_ID  = os.environ.get("WAN_MODEL_ID",  "Wan-AI/Wan2.2-TI2V-5B")
 _TASK         = os.environ.get("WAN_TASK",      "ti2v-5B")
-_SIZE         = os.environ.get("WAN_SIZE",      "704*1280")  # portrait; lower res than 1280*704
+_SIZE         = os.environ.get("WAN_SIZE",      "1280*704")  # landscape 720p equivalent
 
 
 def _ensure_repo() -> None:
@@ -63,8 +63,8 @@ def _ensure_weights() -> None:
 def generate_clip(
     prompt: str,
     output_path: Path,
-    num_frames: int = 9,           # 4k+1 minimum practical; 9 frames ≈ 0.4s, smallest VAE output
-    num_inference_steps: int = 20,
+    num_frames: int = 81,          # 4k+1; 81 frames = 3.4s @ 24fps — good for A100/H100
+    num_inference_steps: int = 50,
     guidance_scale: float = 5.0,
     seed: int | None = None,
 ) -> Path:
@@ -94,7 +94,6 @@ def generate_clip(
             "--frame_num",          str(num_frames),
             "--save_file",          str(tmp_mp4),
             "--offload_model",      "true",
-            "--convert_model_dtype",  # fp16 saves ~1.5 GB during VAE decode
             "--prompt",             prompt,
         ]
         if seed is not None:
@@ -124,7 +123,7 @@ def generate_clip(
 def generate_clips(
     prompts: list[str],
     output_dir: Path,
-    num_frames: int = 9,
+    num_frames: int = 81,
     seed: int | None = None,
 ) -> list[Path]:
     """Generate one clip per prompt, named clip_1.mp4 … clip_N.mp4."""
