@@ -12,6 +12,30 @@ trap 'status=$?; printf "bootstrap failed with status %s at line %s: %s\n" "$sta
 
 printf 'bootstrap started at %s\n' "$(date -Is)"
 
+# ── Clone / update project files into /workspace/youtube-automation ───────────
+# Keep the project in /workspace so it persists across container restarts.
+# The container-local clone at /runpod is ephemeral and unreliable.
+PROJECT=/workspace/youtube-automation
+REPO_URL="https://github.com/ikramarn/runpod.git"
+
+if [ ! -d "$PROJECT/.git" ]; then
+  printf 'setting up git in %s\n' "$PROJECT"
+  git init "$PROJECT"
+  git -C "$PROJECT" remote add origin "$REPO_URL"
+  git -C "$PROJECT" fetch origin
+  git -C "$PROJECT" checkout -b master --track origin/master 2>/dev/null || \
+    git -C "$PROJECT" reset --hard origin/master
+  # Move project files from subdirectory to workspace root if needed
+  if [ -d "$PROJECT/youtube-automation" ]; then
+    cp -r "$PROJECT/youtube-automation/." "$PROJECT/"
+    rm -rf "$PROJECT/youtube-automation"
+  fi
+else
+  printf 'updating project files\n'
+  git -C "$PROJECT" fetch origin
+  git -C "$PROJECT" reset --hard origin/master
+fi
+
 # ── System packages ──────────────────────────────────────────────────────────
 if ! command -v ffmpeg >/dev/null 2>&1; then
   apt-get update
