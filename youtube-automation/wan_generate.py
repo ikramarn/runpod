@@ -33,7 +33,8 @@ WAN_MODEL_ID  = os.environ.get("WAN_MODEL_ID", "Wan-AI/Wan2.2-TI2V-5B")
 _TASK = "ti2v-5B"
 
 # Size format expected by generate.py: width*height  (asterisk, not x)
-_SIZE = "1280*720"
+# TI2V-5B only supports 704*1280 (portrait) or 1280*704 (landscape)
+_SIZE = "1280*704"
 
 
 def _ensure_repo() -> None:
