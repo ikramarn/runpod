@@ -46,11 +46,27 @@ def _ensure_repo() -> None:
         check=True,
     )
     print("[wan_generate] Installing Wan2.2 dependencies …")
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "-r",
-         str(WAN_REPO_DIR / "requirements.txt")],
-        check=True,
-    )
+
+    # flash_attn requires torch already present in the build env to compile.
+    # Install everything except flash_attn first, then install flash_attn
+    # with --no-build-isolation so it can see the already-installed torch.
+    req_file = WAN_REPO_DIR / "requirements.txt"
+    reqs = req_file.read_text().splitlines()
+    non_flash = [r for r in reqs if r.strip() and not r.strip().lower().startswith("flash_attn")]
+    flash = [r for r in reqs if r.strip() and r.strip().lower().startswith("flash_attn")]
+
+    if non_flash:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q"] + non_flash,
+            check=True,
+        )
+    if flash:
+        # --no-build-isolation lets the build see the venv's torch
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q",
+             "--no-build-isolation"] + flash,
+            check=True,
+        )
 
 
 def _ensure_weights() -> None:
