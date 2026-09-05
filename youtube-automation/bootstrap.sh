@@ -127,6 +127,10 @@ export PATH="$HOME/.local/bin:$PATH"
 printf 'onboarding Paperclip\n'
 paperclipai onboard --yes
 
+# Fix secrets directory permissions that Paperclip requires
+chmod 700 "$HOME/.paperclip/instances/default/secrets" 2>/dev/null || true
+chmod 600 "$HOME/.paperclip/instances/default/secrets/master.key" 2>/dev/null || true
+
 # ── Start services ────────────────────────────────────────────────────────────
 printf 'starting Ollama and Paperclip\n'
 ollama serve > /workspace/logs/ollama.log 2>&1 &
