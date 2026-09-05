@@ -70,6 +70,17 @@ def main() -> None:
     narration = DATA / "narration.wav"
     generate_voice(script, narration)
 
+    # 3. Release Ollama VRAM before video generation.
+    # Ollama keeps the model loaded in GPU memory after inference.
+    # Wan2.2 needs the full 24 GB, so we stop Ollama now.
+    # It can be restarted manually afterwards if needed.
+    import subprocess as _sp
+    _sp.run(["pkill", "-f", "llama-server"], capture_output=True)
+    _sp.run(["pkill", "ollama"], capture_output=True)
+    import time as _time
+    _time.sleep(3)
+    print("[pipeline] Ollama stopped — VRAM freed for Wan2.2.")
+
     # 3. Obtain video clips
     if args.skip_download:
         clips = [MEDIA / f"clip_{index}.mp4" for index in range(1, 4)]
