@@ -90,7 +90,9 @@ def generate_clip(
             "--frame_num",          str(num_frames),
             "--save_file",          str(tmp_mp4),
             "--offload_model",      "true",
-            "--t5_cpu",
+            # Note: --t5_cpu removed — loading 11GB T5 to CPU hangs on slow
+            # network volumes. Load to GPU instead; offload_model handles
+            # moving it off GPU between steps.
             "--prompt",             prompt,
         ]
         if seed is not None:
