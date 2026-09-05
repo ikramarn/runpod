@@ -89,7 +89,7 @@ def _ensure_weights() -> None:
 def generate_clip(
     prompt: str,
     output_path: Path,
-    num_frames: int = 81,           # must be 4k+1; 81 ≈ 3.4 s @ 24 fps
+    num_frames: int = 49,           # must be 4k+1; 49 ≈ 2 s @ 24 fps, fits in 24 GB VRAM
     num_inference_steps: int = 50,
     guidance_scale: float = 5.0,
     seed: int | None = None,
@@ -129,6 +129,8 @@ def generate_clip(
         env = os.environ.copy()
         # Ensure Wan2.2 package is importable
         env["PYTHONPATH"] = str(WAN_REPO_DIR) + os.pathsep + env.get("PYTHONPATH", "")
+        # Reduce CUDA memory fragmentation — helps fit inference within 24 GB
+        env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
         print(f"[wan_generate] Generating clip: {prompt[:80]} …")
         result = subprocess.run(cmd, env=env, cwd=str(WAN_REPO_DIR))
@@ -156,7 +158,7 @@ def generate_clip(
 def generate_clips(
     prompts: list[str],
     output_dir: Path,
-    num_frames: int = 81,
+    num_frames: int = 49,
     seed: int | None = None,
 ) -> list[Path]:
     """
