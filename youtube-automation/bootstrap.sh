@@ -115,8 +115,8 @@ if [ -f "$PROJECT/requirements.txt" ]; then
 
   # ── Wan2.2 repo + weights ───────────────────────────────────────────────────
   WAN_REPO=/workspace/Wan2.2
-  WAN_WEIGHTS=/workspace/wan-weights/Wan2.2-TI2V-5B
-  WAN_MODEL_ID="Wan-AI/Wan2.2-TI2V-5B"
+  WAN_WEIGHTS=/workspace/wan-weights/Wan2.2-T2V-A14B
+  WAN_MODEL_ID="Wan-AI/Wan2.2-T2V-A14B"
 
   if [ ! -f "$WAN_REPO/generate.py" ]; then
     printf 'cloning Wan2.2 repo\n'
@@ -133,7 +133,7 @@ if [ -f "$PROJECT/requirements.txt" ]; then
   fi
 
   if [ ! -d "$WAN_WEIGHTS" ] || [ -z "$(ls -A "$WAN_WEIGHTS" 2>/dev/null)" ]; then
-    printf 'downloading Wan2.2 TI2V-5B weights to %s (~15 GB)\n' "$WAN_WEIGHTS"
+    printf 'downloading Wan2.2 T2V-A14B weights to %s\n' "$WAN_WEIGHTS"
     mkdir -p "$WAN_WEIGHTS"
     HF_HUB_ENABLE_HF_TRANSFER=1 "$PROJECT/.venv/bin/huggingface-cli" download \
       "$WAN_MODEL_ID" \

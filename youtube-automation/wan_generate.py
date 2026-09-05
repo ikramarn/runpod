@@ -1,19 +1,18 @@
 """
-Wan2.2 TI2V-5B local text-to-video generation.
+Wan2.2 local text-to-video generation.
 
-Uses the official Wan2.2 inference code (cloned from GitHub) rather than
-diffusers, since diffusers integration is not yet complete for Wan2.2-T2V-A14B.
+Uses Wan2.2-T2V-A14B at 832*480 resolution — low enough VRAM to run on 24 GB.
+The TI2V-5B model only supports 1280*704 which OOMs on 24 GB even with offloading.
 
-We use TI2V-5B (5B params) because:
-  - Runs comfortably on 24 GB VRAM with offload_model=True
-  - Supports text-to-video (no image required, just omit --image)
-  - 720p @ 24fps native output
-  - Task name: "ti2v-5B"
+Upgrade path: swap WAN_MODEL_ID / WAN_MODEL_DIR / _TASK / _SIZE env vars to use
+a larger model on a higher-VRAM pod without changing any pipeline code.
 
 Environment variables (all optional):
-  WAN_REPO_DIR   Path to the cloned Wan2.2 repo   (default: /workspace/Wan2.2)
-  WAN_MODEL_DIR  Path to downloaded TI2V-5B weights (default: /workspace/wan-weights/Wan2.2-TI2V-5B)
-  WAN_MODEL_ID   HuggingFace repo ID               (default: Wan-AI/Wan2.2-TI2V-5B)
+  WAN_REPO_DIR   Path to cloned Wan2.2 repo      (default: /workspace/Wan2.2)
+  WAN_MODEL_DIR  Path to model weights            (default: /workspace/wan-weights/Wan2.2-T2V-A14B)
+  WAN_MODEL_ID   HuggingFace repo ID              (default: Wan-AI/Wan2.2-T2V-A14B)
+  WAN_TASK       generate.py --task value         (default: t2v-A14B)
+  WAN_SIZE       generate.py --size value         (default: 832*480)
 """
 
 from __future__ import annotations
@@ -26,19 +25,14 @@ import tempfile
 from pathlib import Path
 
 WAN_REPO_DIR  = Path(os.environ.get("WAN_REPO_DIR",  "/workspace/Wan2.2"))
-WAN_MODEL_DIR = Path(os.environ.get("WAN_MODEL_DIR", "/workspace/wan-weights/Wan2.2-TI2V-5B"))
-WAN_MODEL_ID  = os.environ.get("WAN_MODEL_ID", "Wan-AI/Wan2.2-TI2V-5B")
-
-# Task name as expected by generate.py --task
-_TASK = "ti2v-5B"
-
-# Size format expected by generate.py: width*height  (asterisk, not x)
-# TI2V-5B only supports 704*1280 (portrait) or 1280*704 (landscape)
-_SIZE = "1280*704"
+WAN_MODEL_DIR = Path(os.environ.get("WAN_MODEL_DIR", "/workspace/wan-weights/Wan2.2-T2V-A14B"))
+WAN_MODEL_ID  = os.environ.get("WAN_MODEL_ID",  "Wan-AI/Wan2.2-T2V-A14B")
+_TASK         = os.environ.get("WAN_TASK",      "t2v-A14B")
+_SIZE         = os.environ.get("WAN_SIZE",      "832*480")
 
 
 def _ensure_repo() -> None:
-    """Clone the official Wan2.2 repo and install its deps if not present."""
+    """Clone the official Wan2.2 repo and install extras if not present."""
     if WAN_REPO_DIR.exists() and (WAN_REPO_DIR / "generate.py").exists():
         return
     print(f"[wan_generate] Cloning Wan2.2 repo → {WAN_REPO_DIR} …")
@@ -47,41 +41,21 @@ def _ensure_repo() -> None:
         check=True,
     )
     print("[wan_generate] Installing Wan2.2 extra dependencies …")
-    # Install only the packages not already covered by the project venv.
-    # We intentionally skip Wan2.2's requirements.txt because:
-    #   - torch/torchvision are already installed with the correct CUDA wheel
-    #   - numpy pin in Wan2.2 (< 2) conflicts with librosa/scipy (>= 2)
-    #   - flash_attn needs --no-build-isolation and a pre-built wheel
-    extras = [
-        "decord",
-        "librosa",
-        "peft",
-        "easydict",
-        "ftfy",
-        "dashscope",
-        "opencv-python",
-        "torchaudio",
-    ]
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q"] + extras,
-        check=True,
-    )
+    # Skip Wan2.2's requirements.txt — it pins numpy<2 which breaks librosa/scipy.
+    extras = ["decord", "librosa", "peft", "easydict", "ftfy",
+              "dashscope", "opencv-python", "torchaudio"]
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q"] + extras, check=True)
 
 
 def _ensure_weights() -> None:
-    """Download TI2V-5B weights via huggingface-cli if not already present."""
-    # Consider present when the directory is non-empty
+    """Download model weights via huggingface-cli if not already present."""
     if WAN_MODEL_DIR.exists() and any(WAN_MODEL_DIR.iterdir()):
         return
     WAN_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"[wan_generate] Downloading {WAN_MODEL_ID} weights → {WAN_MODEL_DIR} (~15 GB) …")
+    print(f"[wan_generate] Downloading {WAN_MODEL_ID} → {WAN_MODEL_DIR} …")
     subprocess.run(
-        [
-            sys.executable, "-m", "huggingface_hub.commands.huggingface_cli",
-            "download",
-            WAN_MODEL_ID,
-            "--local-dir", str(WAN_MODEL_DIR),
-        ],
+        ["huggingface-cli", "download", WAN_MODEL_ID,
+         "--local-dir", str(WAN_MODEL_DIR)],
         check=True,
     )
 
@@ -89,22 +63,18 @@ def _ensure_weights() -> None:
 def generate_clip(
     prompt: str,
     output_path: Path,
-    num_frames: int = 33,           # must be 4k+1; 33 ≈ 1.4 s @ 24 fps, lowest that fits 24 GB
-    num_inference_steps: int = 20,  # 20 steps sufficient for good quality, lower peak VRAM
-    guidance_scale: float = 3.5,    # lower CFG reduces activation memory
+    num_frames: int = 33,          # 4k+1; 33 ≈ 1.4 s @ 24 fps
+    num_inference_steps: int = 20,
+    guidance_scale: float = 5.0,
     seed: int | None = None,
 ) -> Path:
-    """
-    Generate a single MP4 clip from *prompt* using generate.py and write it
-    to *output_path*.  Returns the resolved output path.
-    """
+    """Generate a single MP4 clip and write it to output_path."""
     _ensure_repo()
     _ensure_weights()
 
     output_path = Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Use a temp file so generate.py's save_file path is absolute and unambiguous
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
         tmp_mp4 = Path(tmp.name)
 
@@ -119,36 +89,27 @@ def generate_clip(
             "--sample_guide_scale", str(guidance_scale),
             "--frame_num",          str(num_frames),
             "--save_file",          str(tmp_mp4),
-            "--offload_model",      "true",   # offload layers to CPU between steps
-            "--t5_cpu",                       # keep T5 encoder on CPU entirely
-            "--convert_model_dtype",          # fp16 instead of bf16, saves ~1.5 GB VRAM
+            "--offload_model",      "true",
+            "--t5_cpu",
             "--prompt",             prompt,
         ]
         if seed is not None:
             cmd += ["--base_seed", str(seed)]
 
         env = os.environ.copy()
-        # Ensure Wan2.2 package is importable
         env["PYTHONPATH"] = str(WAN_REPO_DIR) + os.pathsep + env.get("PYTHONPATH", "")
-        # Reduce CUDA memory fragmentation — helps fit inference within 24 GB
         env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-        print(f"[wan_generate] Generating clip: {prompt[:80]} …")
+        print(f"[wan_generate] Generating: {prompt[:80]} …")
         result = subprocess.run(cmd, env=env, cwd=str(WAN_REPO_DIR))
         if result.returncode != 0:
-            raise RuntimeError(
-                f"Wan2.2 generate.py exited with code {result.returncode}. "
-                "Check the output above for details."
-            )
+            raise RuntimeError(f"generate.py exited {result.returncode}")
 
         if not tmp_mp4.exists():
-            raise RuntimeError(
-                f"generate.py succeeded but {tmp_mp4} was not created."
-            )
+            raise RuntimeError(f"generate.py succeeded but {tmp_mp4} not created")
 
         shutil.move(str(tmp_mp4), str(output_path))
     finally:
-        # Clean up temp file if still present after an error
         if tmp_mp4.exists():
             tmp_mp4.unlink(missing_ok=True)
 
@@ -162,10 +123,7 @@ def generate_clips(
     num_frames: int = 33,
     seed: int | None = None,
 ) -> list[Path]:
-    """
-    Generate one clip per prompt, named clip_1.mp4 … clip_N.mp4.
-    Returns the list of output paths in order.
-    """
+    """Generate one clip per prompt, named clip_1.mp4 … clip_N.mp4."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
