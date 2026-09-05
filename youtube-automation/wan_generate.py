@@ -75,7 +75,11 @@ def generate_clip(
     output_path = Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(
+        suffix=".mp4",
+        delete=False,
+        dir=output_path.parent,   # same filesystem as destination — avoids cross-device move
+    ) as tmp:
         tmp_mp4 = Path(tmp.name)
 
     try:
