@@ -45,28 +45,26 @@ def _ensure_repo() -> None:
         ["git", "clone", "https://github.com/Wan-Video/Wan2.2.git", str(WAN_REPO_DIR)],
         check=True,
     )
-    print("[wan_generate] Installing Wan2.2 dependencies …")
-
-    # flash_attn requires torch already present in the build env to compile.
-    # Install everything except flash_attn first, then install flash_attn
-    # with --no-build-isolation so it can see the already-installed torch.
-    req_file = WAN_REPO_DIR / "requirements.txt"
-    reqs = req_file.read_text().splitlines()
-    non_flash = [r for r in reqs if r.strip() and not r.strip().lower().startswith("flash_attn")]
-    flash = [r for r in reqs if r.strip() and r.strip().lower().startswith("flash_attn")]
-
-    if non_flash:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-q"] + non_flash,
-            check=True,
-        )
-    if flash:
-        # --no-build-isolation lets the build see the venv's torch
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-q",
-             "--no-build-isolation"] + flash,
-            check=True,
-        )
+    print("[wan_generate] Installing Wan2.2 extra dependencies …")
+    # Install only the packages not already covered by the project venv.
+    # We intentionally skip Wan2.2's requirements.txt because:
+    #   - torch/torchvision are already installed with the correct CUDA wheel
+    #   - numpy pin in Wan2.2 (< 2) conflicts with librosa/scipy (>= 2)
+    #   - flash_attn needs --no-build-isolation and a pre-built wheel
+    extras = [
+        "decord",
+        "librosa",
+        "peft",
+        "easydict",
+        "ftfy",
+        "dashscope",
+        "opencv-python",
+        "torchaudio",
+    ]
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q"] + extras,
+        check=True,
+    )
 
 
 def _ensure_weights() -> None:
