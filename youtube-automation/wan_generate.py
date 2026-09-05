@@ -89,9 +89,9 @@ def _ensure_weights() -> None:
 def generate_clip(
     prompt: str,
     output_path: Path,
-    num_frames: int = 49,           # must be 4k+1; 49 ≈ 2 s @ 24 fps, fits in 24 GB VRAM
+    num_frames: int = 33,           # must be 4k+1; 33 ≈ 1.4 s @ 24 fps, lowest that fits 24 GB
     num_inference_steps: int = 20,  # 20 steps sufficient for good quality, lower peak VRAM
-    guidance_scale: float = 5.0,
+    guidance_scale: float = 3.5,    # lower CFG reduces activation memory
     seed: int | None = None,
 ) -> Path:
     """
@@ -159,7 +159,7 @@ def generate_clip(
 def generate_clips(
     prompts: list[str],
     output_dir: Path,
-    num_frames: int = 49,
+    num_frames: int = 33,
     seed: int | None = None,
 ) -> list[Path]:
     """
