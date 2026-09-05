@@ -38,8 +38,10 @@ def _extract_scene_prompts(script: str, topic: str) -> list[str]:
         # Keep prompts concise — Wan2.2 performs best under ~77 tokens
         summary = part[:200] if len(part) > 200 else part
         prompts.append(
-            f"Cinematic 4K footage, {topic}, {summary}, "
-            "smooth camera motion, professional lighting, no text, no watermark"
+            f"Cinematic footage, {topic}, {summary}, "
+            "smooth camera motion, professional lighting, no text, no watermark, "
+            "no computer screens, no monitors, no displays, no UI, no close-ups of keyboards, "
+            "abstract visualization, nature, people, objects"
         )
     return prompts
 

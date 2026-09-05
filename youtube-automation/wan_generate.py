@@ -64,7 +64,7 @@ def generate_clip(
     prompt: str,
     output_path: Path,
     num_frames: int = 81,          # 4k+1; 81 frames = 3.4s @ 24fps — good for A100/H100
-    num_inference_steps: int = 50,
+    num_inference_steps: int = 70, # higher steps = better quality, worth it on 80GB
     guidance_scale: float = 5.0,
     seed: int | None = None,
 ) -> Path:
