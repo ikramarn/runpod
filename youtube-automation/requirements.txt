@@ -2,11 +2,11 @@ requests>=2.32,<3
 Pillow>=10,<12
 
 # Wan2.2 video generation (GPU inference on RunPod)
+# Note: torch is installed separately in bootstrap.sh with the cu128 wheel
+#       to ensure the correct CUDA build is used. These pins just document
+#       the minimum versions needed.
 torch>=2.8.0
 torchvision>=0.20.0
-diffusers>=0.32.0
 transformers>=4.44.0
 accelerate>=0.33.0
-imageio>=2.36.0
-imageio-ffmpeg>=0.5.0
 huggingface-hub>=0.24.0

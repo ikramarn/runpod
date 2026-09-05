@@ -1,135 +1,152 @@
 """
 Wan2.2 TI2V-5B local text-to-video generation.
 
-Generates short MP4 clips from text prompts using the Wan-AI/Wan2.2-T2V-A14B
-model (the dense TI2V-5B variant is used by default for 24 GB VRAM).
+Uses the official Wan2.2 inference code (cloned from GitHub) rather than
+diffusers, since diffusers integration is not yet complete for Wan2.2-T2V-A14B.
 
-Environment variables:
-  WAN_MODEL_ID   Override the HuggingFace model repo
-                 (default: Wan-AI/Wan2.2-T2V-A14B)
-  WAN_CACHE_DIR  Override the local weights cache directory
-                 (default: /workspace/wan-weights)
+We use TI2V-5B (5B params) because:
+  - Runs comfortably on 24 GB VRAM with offload_model=True
+  - Supports text-to-video (no image required, just omit --image)
+  - 720p @ 24fps native output
+  - Task name: "ti2v-5B"
 
-The model is loaded once and cached in module-level state so repeated calls
-within the same process do not reload weights.
+Environment variables (all optional):
+  WAN_REPO_DIR   Path to the cloned Wan2.2 repo   (default: /workspace/Wan2.2)
+  WAN_MODEL_DIR  Path to downloaded TI2V-5B weights (default: /workspace/wan-weights/Wan2.2-TI2V-5B)
+  WAN_MODEL_ID   HuggingFace repo ID               (default: Wan-AI/Wan2.2-TI2V-5B)
 """
 
 from __future__ import annotations
 
 import os
+import sys
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
-import torch
-import imageio
-import numpy as np
+WAN_REPO_DIR  = Path(os.environ.get("WAN_REPO_DIR",  "/workspace/Wan2.2"))
+WAN_MODEL_DIR = Path(os.environ.get("WAN_MODEL_DIR", "/workspace/wan-weights/Wan2.2-TI2V-5B"))
+WAN_MODEL_ID  = os.environ.get("WAN_MODEL_ID", "Wan-AI/Wan2.2-TI2V-5B")
 
-# ---------------------------------------------------------------------------
-# Lazy pipeline cache — loaded on first call to generate_clip()
-# ---------------------------------------------------------------------------
-_pipe = None
+# Task name as expected by generate.py --task
+_TASK = "ti2v-5B"
+
+# Size format expected by generate.py: width*height  (asterisk, not x)
+_SIZE = "1280*720"
 
 
-def _load_pipeline():
-    global _pipe
-    if _pipe is not None:
-        return _pipe
-
-    from diffusers import AutoencoderKLWan, WanPipeline
-    from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
-
-    model_id = os.environ.get("WAN_MODEL_ID", "Wan-AI/Wan2.2-T2V-A14B")
-    cache_dir = os.environ.get("WAN_CACHE_DIR", "/workspace/wan-weights")
-
-    print(f"[wan_generate] Loading {model_id} (this takes ~60 s on first run) …")
-
-    # Mean/std values from the official Wan2.2 release
-    vae = AutoencoderKLWan.from_pretrained(
-        model_id,
-        subfolder="vae",
-        torch_dtype=torch.float32,
-        cache_dir=cache_dir,
+def _ensure_repo() -> None:
+    """Clone the official Wan2.2 repo and install its deps if not present."""
+    if WAN_REPO_DIR.exists() and (WAN_REPO_DIR / "generate.py").exists():
+        return
+    print(f"[wan_generate] Cloning Wan2.2 repo → {WAN_REPO_DIR} …")
+    subprocess.run(
+        ["git", "clone", "https://github.com/Wan-Video/Wan2.2.git", str(WAN_REPO_DIR)],
+        check=True,
+    )
+    print("[wan_generate] Installing Wan2.2 dependencies …")
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q", "-r",
+         str(WAN_REPO_DIR / "requirements.txt")],
+        check=True,
     )
 
-    _pipe = WanPipeline.from_pretrained(
-        model_id,
-        vae=vae,
-        torch_dtype=torch.bfloat16,
-        cache_dir=cache_dir,
+
+def _ensure_weights() -> None:
+    """Download TI2V-5B weights via huggingface-cli if not already present."""
+    # Consider present when the directory is non-empty
+    if WAN_MODEL_DIR.exists() and any(WAN_MODEL_DIR.iterdir()):
+        return
+    WAN_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"[wan_generate] Downloading {WAN_MODEL_ID} weights → {WAN_MODEL_DIR} (~15 GB) …")
+    subprocess.run(
+        [
+            sys.executable, "-m", "huggingface_hub.commands.huggingface_cli",
+            "download",
+            WAN_MODEL_ID,
+            "--local-dir", str(WAN_MODEL_DIR),
+        ],
+        check=True,
     )
-    _pipe.scheduler = UniPCMultistepScheduler.from_config(_pipe.scheduler.config,
-                                                          flow_shift=8.0)
-    _pipe.to("cuda")
-    _pipe.enable_model_cpu_offload()   # keeps peak VRAM ≈ 18–22 GB on 24 GB card
-    print("[wan_generate] Pipeline ready.")
-    return _pipe
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 def generate_clip(
     prompt: str,
     output_path: Path,
-    negative_prompt: str = "low quality, blurry, distorted, watermark, text",
-    num_frames: int = 81,       # ~3.4 s at 24 fps; must be 4k+1 (e.g. 49, 81)
-    fps: int = 24,
-    width: int = 1280,
-    height: int = 720,
+    num_frames: int = 81,           # must be 4k+1; 81 ≈ 3.4 s @ 24 fps
     num_inference_steps: int = 50,
     guidance_scale: float = 5.0,
     seed: int | None = None,
 ) -> Path:
     """
-    Generate a single video clip from *prompt* and write it to *output_path*.
-
-    Returns the resolved output path.
+    Generate a single MP4 clip from *prompt* using generate.py and write it
+    to *output_path*.  Returns the resolved output path.
     """
-    output_path = Path(output_path)
+    _ensure_repo()
+    _ensure_weights()
+
+    output_path = Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    pipe = _load_pipeline()
+    # Use a temp file so generate.py's save_file path is absolute and unambiguous
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+        tmp_mp4 = Path(tmp.name)
 
-    generator = torch.Generator(device="cuda")
-    if seed is not None:
-        generator.manual_seed(seed)
+    try:
+        cmd = [
+            sys.executable,
+            str(WAN_REPO_DIR / "generate.py"),
+            "--task",               _TASK,
+            "--size",               _SIZE,
+            "--ckpt_dir",           str(WAN_MODEL_DIR),
+            "--sample_steps",       str(num_inference_steps),
+            "--sample_guide_scale", str(guidance_scale),
+            "--frame_num",          str(num_frames),
+            "--save_file",          str(tmp_mp4),
+            "--offload_model",      "true",   # keep peak VRAM ≤ 22 GB on 24 GB card
+            "--t5_cpu",                       # offload T5 encoder to CPU
+            "--prompt",             prompt,
+        ]
+        if seed is not None:
+            cmd += ["--base_seed", str(seed)]
 
-    print(f"[wan_generate] Generating: {prompt[:80]} …")
-    result = pipe(
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        height=height,
-        width=width,
-        num_frames=num_frames,
-        num_inference_steps=num_inference_steps,
-        guidance_scale=guidance_scale,
-        generator=generator,
-    )
+        env = os.environ.copy()
+        # Ensure Wan2.2 package is importable
+        env["PYTHONPATH"] = str(WAN_REPO_DIR) + os.pathsep + env.get("PYTHONPATH", "")
 
-    # result.frames is a list-of-lists: [batch][frame] = PIL Image
-    frames = result.frames[0]
+        print(f"[wan_generate] Generating clip: {prompt[:80]} …")
+        result = subprocess.run(cmd, env=env, cwd=str(WAN_REPO_DIR))
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Wan2.2 generate.py exited with code {result.returncode}. "
+                "Check the output above for details."
+            )
 
-    # Write to MP4 via imageio
-    writer = imageio.get_writer(str(output_path), fps=fps, codec="libx264",
-                                 quality=8, pixelformat="yuv420p")
-    for frame in frames:
-        writer.append_data(np.array(frame))
-    writer.close()
+        if not tmp_mp4.exists():
+            raise RuntimeError(
+                f"generate.py succeeded but {tmp_mp4} was not created."
+            )
 
-    print(f"[wan_generate] Saved {len(frames)} frames → {output_path}")
+        shutil.move(str(tmp_mp4), str(output_path))
+    finally:
+        # Clean up temp file if still present after an error
+        if tmp_mp4.exists():
+            tmp_mp4.unlink(missing_ok=True)
+
+    print(f"[wan_generate] Saved → {output_path}")
     return output_path
 
 
 def generate_clips(
     prompts: list[str],
     output_dir: Path,
-    fps: int = 24,
     num_frames: int = 81,
     seed: int | None = None,
 ) -> list[Path]:
     """
-    Generate one clip per prompt and return the list of output paths.
-    Clips are named clip_1.mp4, clip_2.mp4, … to match the existing pipeline.
+    Generate one clip per prompt, named clip_1.mp4 … clip_N.mp4.
+    Returns the list of output paths in order.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -139,7 +156,6 @@ def generate_clips(
         path = generate_clip(
             prompt=prompt,
             output_path=output_dir / f"clip_{index}.mp4",
-            fps=fps,
             num_frames=num_frames,
             seed=clip_seed,
         )

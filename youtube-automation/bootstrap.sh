@@ -12,29 +12,39 @@ trap 'status=$?; printf "bootstrap failed with status %s at line %s: %s\n" "$sta
 
 printf 'bootstrap started at %s\n' "$(date -Is)"
 
+# ── System packages ──────────────────────────────────────────────────────────
 if ! command -v ffmpeg >/dev/null 2>&1; then
   apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg python3-venv curl
+  DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg python3-venv curl git
 fi
 
+# ── Ollama ───────────────────────────────────────────────────────────────────
 if ! command -v ollama >/dev/null 2>&1; then
   printf 'installing Ollama\n'
   curl -fsSL "https://ollama.com/install.sh?cachebust=$(date +%s)" | sh
 fi
 
+# ── Node.js 24 + Paperclip ───────────────────────────────────────────────────
+# Paperclip requires Node.js >= 24.11.0
 if ! command -v paperclipai >/dev/null 2>&1; then
   printf 'installing Paperclip\n'
-  if ! command -v node >/dev/null 2>&1 || ! command -v npx >/dev/null 2>&1; then
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  NODE_MAJOR=$(node --version 2>/dev/null | sed 's/v\([0-9]*\).*/\1/' || true)
+  if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 24 ]; then
+    printf 'installing Node.js 24\n'
+    curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
     DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
   fi
   npx --yes paperclipai@latest install
 fi
 
+# ── opencode ─────────────────────────────────────────────────────────────────
 if ! command -v opencode >/dev/null 2>&1; then
+  # Allow install scripts for opencode-ai to avoid ENOENT on package.json
+  npm config set allow-scripts=opencode-ai --location=user
   npm install --global opencode-ai
 fi
 
+# ── opencode config ──────────────────────────────────────────────────────────
 cat > "$HOME/.config/opencode/opencode.json" <<'EOF'
 {
   "$schema": "https://opencode.ai/config.json",
@@ -55,15 +65,14 @@ cat > "$HOME/.config/opencode/opencode.json" <<'EOF'
 }
 EOF
 
+# ── Python venv + dependencies ────────────────────────────────────────────────
 if [ -f "$PROJECT/requirements.txt" ]; then
   if [ ! -d "$PROJECT/.venv" ]; then
     python3 -m venv "$PROJECT/.venv"
   fi
   "$PROJECT/.venv/bin/pip" install --upgrade pip
 
-  # Install PyTorch 2.8 with CUDA 12.8 wheel first so the index is available
-  # for the rest of the requirements (RunPod ships CUDA 12.x drivers even when
-  # reporting CUDA 13 compatibility).
+  # Install PyTorch 2.8 with CUDA 12.8 wheel first (RunPod CUDA 12.x drivers)
   "$PROJECT/.venv/bin/pip" install \
     torch==2.8.0 torchvision \
     --index-url https://download.pytorch.org/whl/cu128
@@ -71,41 +80,46 @@ if [ -f "$PROJECT/requirements.txt" ]; then
   "$PROJECT/.venv/bin/pip" install -r "$PROJECT/requirements.txt"
   "$PROJECT/.venv/bin/pip" install piper-tts
 
-  if [ ! -f "$PROJECT/en_US-lessac-medium.onnx" ] || [ ! -f "$PROJECT/en_US-lessac-medium.onnx.json" ]; then
+  # ── Piper voice model ───────────────────────────────────────────────────────
+  if [ ! -f "$PROJECT/en_US-lessac-medium.onnx" ] || \
+     [ ! -f "$PROJECT/en_US-lessac-medium.onnx.json" ]; then
     printf 'downloading Piper voice model\n'
-    (cd "$PROJECT" && "$PROJECT/.venv/bin/python" -m piper.download_voices --data-dir "$PROJECT" en_US-lessac-medium)
+    (cd "$PROJECT" && \
+     "$PROJECT/.venv/bin/python" -m piper.download_voices \
+       --data-dir "$PROJECT" en_US-lessac-medium)
   fi
 
-  # Pre-download Wan2.2 weights so the first pipeline run does not time out.
-  # Weights are stored in /workspace/wan-weights (~20 GB) which persists across
-  # Pod stops but not Pod terminations.
-  WAN_CACHE=/workspace/wan-weights
-  WAN_MODEL="Wan-AI/Wan2.2-T2V-A14B"
-  if [ ! -d "$WAN_CACHE/models--Wan-AI--Wan2.2-T2V-A14B" ]; then
-    printf 'downloading Wan2.2 weights to %s (this is ~20 GB)\n' "$WAN_CACHE"
-    mkdir -p "$WAN_CACHE"
-    "$PROJECT/.venv/bin/python" - <<PYEOF
-import os
-os.environ["HF_HOME"] = "$WAN_CACHE"
-from huggingface_hub import snapshot_download
-snapshot_download(
-    repo_id="$WAN_MODEL",
-    cache_dir="$WAN_CACHE",
-    ignore_patterns=["*.bin"],   # prefer safetensors
-)
-print("Wan2.2 weights downloaded.")
-PYEOF
-  else
-    printf 'Wan2.2 weights already cached at %s\n' "$WAN_CACHE"
+  # ── Wan2.2 repo + weights ───────────────────────────────────────────────────
+  WAN_REPO=/workspace/Wan2.2
+  WAN_WEIGHTS=/workspace/wan-weights/Wan2.2-TI2V-5B
+  WAN_MODEL_ID="Wan-AI/Wan2.2-TI2V-5B"
+
+  if [ ! -f "$WAN_REPO/generate.py" ]; then
+    printf 'cloning Wan2.2 repo\n'
+    git clone https://github.com/Wan-Video/Wan2.2.git "$WAN_REPO"
+    "$PROJECT/.venv/bin/pip" install -q -r "$WAN_REPO/requirements.txt"
   fi
+
+  if [ ! -d "$WAN_WEIGHTS" ] || [ -z "$(ls -A "$WAN_WEIGHTS" 2>/dev/null)" ]; then
+    printf 'downloading Wan2.2 TI2V-5B weights to %s (~15 GB)\n' "$WAN_WEIGHTS"
+    mkdir -p "$WAN_WEIGHTS"
+    "$PROJECT/.venv/bin/huggingface-cli" download \
+      "$WAN_MODEL_ID" \
+      --local-dir "$WAN_WEIGHTS"
+  else
+    printf 'Wan2.2 weights already present at %s\n' "$WAN_WEIGHTS"
+  fi
+
 else
   printf 'waiting for project files at %s\n' "$PROJECT"
 fi
 
+# ── Paperclip onboard ─────────────────────────────────────────────────────────
 export PATH="$HOME/.local/bin:$PATH"
 printf 'onboarding Paperclip\n'
 paperclipai onboard --yes
 
+# ── Start services ────────────────────────────────────────────────────────────
 printf 'starting Ollama and Paperclip\n'
 ollama serve > /workspace/logs/ollama.log 2>&1 &
 ollama_pid=$!
